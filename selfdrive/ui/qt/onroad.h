@@ -96,6 +96,11 @@ private:
   QColor bg = bg_colors[STATUS_DISENGAGED];
   QWidget *map = nullptr;
   QHBoxLayout* split;
+  bool left_blinker = false;
+  bool right_blinker = false;
+  bool left_blindspot = false;
+  bool right_blindspot = false;
+  bool blink_on = false;
 
 private slots:
   void offroadTransition(bool offroad);

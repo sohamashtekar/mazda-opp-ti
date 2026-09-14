@@ -195,7 +195,7 @@ void ui_update_params(UIState *s) {
 }
 
 void UIState::updateStatus() {
-  if (scene.started && sm->updated("controlsState")) {
+  if (scene.started && (sm->updated("controlsState") || sm->updated("carState"))) {
     auto controls_state = (*sm)["controlsState"].getControlsState();
     auto alert_status = controls_state.getAlertStatus();
     if (alert_status == cereal::ControlsState::AlertStatus::USER_PROMPT) {
@@ -203,7 +203,15 @@ void UIState::updateStatus() {
     } else if (alert_status == cereal::ControlsState::AlertStatus::CRITICAL) {
       status = STATUS_ALERT;
     } else {
-      status = controls_state.getEnabled() ? STATUS_ENGAGED : STATUS_DISENGAGED;
+      const bool acc_active = (*sm)["carState"].getCarState().getCruiseState().getEnabled();
+      const bool lat_active = controls_state.getActive();
+      if (acc_active) {
+        status = STATUS_ENGAGED;
+      } else if (lat_active) {
+        status = STATUS_LAT_ACTIVE;
+      } else {
+        status = STATUS_DISENGAGED;
+      }
     }
   }
 

@@ -31,6 +31,9 @@ from selfdrive.manager.process_config import managed_processes
 SOFT_DISABLE_TIME = 3  # seconds
 LDW_MIN_SPEED = 31 * CV.MPH_TO_MS
 LANE_DEPARTURE_THRESHOLD = 0.1
+UNSAFE_ALWAYS_ON_LATERAL = 16  # panda/board/safety_declarations.h
+NON_DRIVING_GEARS = (car.CarState.GearShifter.park, car.CarState.GearShifter.reverse,
+                     car.CarState.GearShifter.neutral, car.CarState.GearShifter.unknown)
 
 REPLAY = "REPLAY" in os.environ
 SIMULATION = "SIMULATION" in os.environ
@@ -102,6 +105,16 @@ class Controls:
     self.is_ldw_enabled = params.get_bool("IsLdwEnabled")
     openpilot_enabled_toggle = params.get_bool("OpenpilotEnabledToggle")
     passive = params.get_bool("Passive") or not openpilot_enabled_toggle
+    self.always_on_lateral = params.get_bool("AlwaysOnLateral")
+    self.always_on_lateral_main = params.get_bool("AlwaysOnLateralMain")
+    self.pause_aol_on_brake = params.get_bool("PauseAOLOnBrake")
+    self.aol_latched = False
+    self.aol_enabled = False
+    self.lat_active = False
+
+    # Program panda to allow LKAS torque with ACC Main on (Mazda AOL)
+    if self.always_on_lateral and self.CP.carName == "mazda":
+      self.CP.unsafeMode = self.CP.unsafeMode | UNSAFE_ALWAYS_ON_LATERAL
 
     # detect sound card presence and ensure successful init
     sounds_available = HARDWARE.get_sound_card_online()
@@ -272,6 +285,8 @@ class Controls:
         self.CP.enableTorqueInterceptor = True
         #Update CP based on torque_interceptor_ready
         self.CP = get_ti()
+        if self.always_on_lateral and self.CP.carName == "mazda":
+          self.CP.unsafeMode = self.CP.unsafeMode | UNSAFE_ALWAYS_ON_LATERAL
 
     # Check for HW or system issues
 
@@ -470,11 +485,37 @@ class Controls:
 
     # Check if actuators are enabled
     self.active = self.state == State.enabled or self.state == State.softDisabling
-    if self.active:
+
+    # Check if openpilot is engaged (cruise SET). AOL steering uses lat_active instead.
+    self.enabled = self.active or self.state == State.preEnabled
+
+    self._update_always_on_lateral(CS)
+    if self.joystick_mode:
+      self.lat_active = self.active
+    else:
+      self.lat_active = ((self.active or self.aol_enabled) and not CS.steerWarning and
+                         not CS.steerError and CS.vEgo > self.CP.minSteerSpeed)
+
+    if self.active or self.lat_active:
       self.current_alert_types.append(ET.WARNING)
 
-    # Check if openpilot is engaged
-    self.enabled = self.active or self.state == State.preEnabled
+  def _update_always_on_lateral(self, CS):
+    if not self.always_on_lateral or self.CP.carName != "mazda":
+      self.aol_latched = False
+      self.aol_enabled = False
+      return
+
+    # Main off unlatches. SET latches. Enable With Cruise Control latches from Main alone.
+    if not CS.cruiseState.available:
+      self.aol_latched = False
+    elif self.always_on_lateral_main or CS.cruiseState.enabled:
+      self.aol_latched = True
+
+    pause_on_brake = self.pause_aol_on_brake and CS.brakePressed and not CS.standstill
+    calibrated = self.sm['liveCalibration'].calStatus == Calibration.CALIBRATED
+    driving = CS.gearShifter not in NON_DRIVING_GEARS
+    self.aol_enabled = bool(self.aol_latched and CS.cruiseState.available and driving and
+                            calibrated and not pause_on_brake)
 
   def state_control(self, CS):
     """Given the state, this function returns an actuators packet"""
@@ -496,8 +537,9 @@ class Controls:
 
     # State specific actions
 
-    if not self.active:
+    if not self.lat_active:
       self.LaC.reset()
+    if not self.active:
       self.LoC.reset(v_pid=CS.vEgo)
 
     if not self.joystick_mode:
@@ -506,12 +548,11 @@ class Controls:
       actuators.accel = self.LoC.update(self.active, CS, self.CP, long_plan, pid_accel_limits)
 
       # Steering PID loop and lateral MPC
-      lat_active = self.active and not CS.steerWarning and not CS.steerError and CS.vEgo > self.CP.minSteerSpeed
       desired_curvature, desired_curvature_rate = get_lag_adjusted_curvature(self.CP, CS.vEgo,
                                                                              lat_plan.psis,
                                                                              lat_plan.curvatures,
                                                                              lat_plan.curvatureRates)
-      actuators.steer, actuators.steeringAngleDeg, lac_log = self.LaC.update(lat_active, CS, self.CP, self.VM, params, self.last_actuators,
+      actuators.steer, actuators.steeringAngleDeg, lac_log = self.LaC.update(self.lat_active, CS, self.CP, self.VM, params, self.last_actuators,
                                                                              desired_curvature, desired_curvature_rate)
     else:
       lac_log = log.ControlsState.LateralDebugState.new_message()
@@ -566,7 +607,7 @@ class Controls:
 
     CC = car.CarControl.new_message()
     CC.enabled = self.enabled
-    CC.active = self.active
+    CC.active = self.lat_active
     CC.actuators = actuators
 
     orientation_value = self.sm['liveLocationKalman'].orientationNED.value
@@ -580,8 +621,8 @@ class Controls:
 
     hudControl = CC.hudControl
     hudControl.setSpeed = float(self.v_cruise_kph * CV.KPH_TO_MS)
-    hudControl.speedVisible = self.enabled
-    hudControl.lanesVisible = self.enabled
+    hudControl.speedVisible = self.enabled or self.lat_active
+    hudControl.lanesVisible = self.enabled or self.lat_active
     hudControl.leadVisible = self.sm['longitudinalPlan'].hasLead
 
     hudControl.rightLaneVisible = True
@@ -589,7 +630,7 @@ class Controls:
 
     recent_blinker = (self.sm.frame - self.last_blinker_frame) * DT_CTRL < 5.0  # 5s blinker cooldown
     ldw_allowed = self.is_ldw_enabled and CS.vEgo > LDW_MIN_SPEED and not recent_blinker \
-                    and not self.active and self.sm['liveCalibration'].calStatus == Calibration.CALIBRATED
+                    and not self.lat_active and self.sm['liveCalibration'].calStatus == Calibration.CALIBRATED
 
     model_v2 = self.sm['modelV2']
     desire_prediction = model_v2.meta.desirePrediction
@@ -612,7 +653,7 @@ class Controls:
     clear_event_types = set()
     if ET.WARNING not in self.current_alert_types:
       clear_event_types.add(ET.WARNING)
-    if self.enabled:
+    if self.enabled or self.lat_active:
       clear_event_types.add(ET.NO_ENTRY)
 
     alerts = self.events.create_alerts(self.current_alert_types, [self.CP, self.sm, self.is_metric, self.soft_disable_timer])
@@ -652,8 +693,8 @@ class Controls:
     controlsState.canMonoTimes = list(CS.canMonoTimes)
     controlsState.longitudinalPlanMonoTime = self.sm.logMonoTime['longitudinalPlan']
     controlsState.lateralPlanMonoTime = self.sm.logMonoTime['lateralPlan']
-    controlsState.enabled = self.enabled
-    controlsState.active = self.active
+    controlsState.enabled = self.enabled or self.lat_active
+    controlsState.active = self.lat_active
     controlsState.curvature = curvature
     controlsState.state = self.state
     controlsState.engageable = not self.events.any(ET.NO_ENTRY)

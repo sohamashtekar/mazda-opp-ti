@@ -84,6 +84,8 @@ private:
 
 std::unordered_map<std::string, uint32_t> keys = {
     {"AccessToken", CLEAR_ON_MANAGER_START | DONT_LOG},
+    {"AlwaysOnLateral", PERSISTENT},
+    {"AlwaysOnLateralMain", PERSISTENT},
     {"AthenadPid", PERSISTENT},
     {"AthenadUploadQueue", PERSISTENT},
     {"CalibrationParams", PERSISTENT},
@@ -142,6 +144,7 @@ std::unordered_map<std::string, uint32_t> keys = {
     {"NavdRender", PERSISTENT},
     {"OpenpilotEnabledToggle", PERSISTENT},
     {"PandaHeartbeatLost", CLEAR_ON_MANAGER_START | CLEAR_ON_IGNITION_OFF},
+    {"PauseAOLOnBrake", PERSISTENT},
     {"PandaSignatures", CLEAR_ON_MANAGER_START},
     {"Passive", PERSISTENT},
     {"PrimeRedirected", PERSISTENT},

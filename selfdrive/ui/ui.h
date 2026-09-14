@@ -76,13 +76,15 @@ typedef enum UIStatus {
   STATUS_ENGAGED,
   STATUS_WARNING,
   STATUS_ALERT,
+  STATUS_LAT_ACTIVE,
 } UIStatus;
 
 const QColor bg_colors [] = {
-  [STATUS_DISENGAGED] =  QColor(0x17, 0x33, 0x49, 0xc8),
-  [STATUS_ENGAGED] = QColor(0x17, 0x86, 0x44, 0xf1),
+  [STATUS_DISENGAGED] = QColor(0x80, 0x80, 0x80, 0xf1),  // grey: driver steering
+  [STATUS_ENGAGED] = QColor(0x17, 0x86, 0x44, 0xf1),     // green: ACC SET
   [STATUS_WARNING] = QColor(0xDA, 0x6F, 0x25, 0xf1),
   [STATUS_ALERT] = QColor(0xC9, 0x22, 0x31, 0xf1),
+  [STATUS_LAT_ACTIVE] = QColor(0x31, 0xA1, 0xEE, 0xf1),  // light blue: openpilot steering
 };
 
 typedef struct {

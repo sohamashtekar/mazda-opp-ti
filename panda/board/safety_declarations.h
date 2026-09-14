@@ -144,7 +144,14 @@ struct sample_t angle_meas;         // last 3 steer angles
 // See ISO 15622:2018 for more information.
 #define UNSAFE_RAISE_LONGITUDINAL_LIMITS_TO_ISO_MAX 8
 
+// Allow lateral control when ACC Main is on, even if cruise is not SET.
+#define UNSAFE_ALWAYS_ON_LATERAL 16
+
 int unsafe_mode = 0;
+
+static inline bool lat_control_allowed(void) {
+  return controls_allowed || ((unsafe_mode & UNSAFE_ALWAYS_ON_LATERAL) && acc_main_on && vehicle_moving);
+}
 
 // time since safety mode has been changed
 uint32_t safety_mode_cnt = 0U;

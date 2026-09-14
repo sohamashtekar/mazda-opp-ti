@@ -59,9 +59,24 @@ void OnroadWindow::updateState(const UIState &s) {
 
   hud->updateState(s);
 
-  if (bg != bgColor) {
-    // repaint border
+  const auto car_state = (*s.sm)["carState"].getCarState();
+  const bool left_blinker_new = car_state.getLeftBlinker();
+  const bool right_blinker_new = car_state.getRightBlinker();
+  const bool left_blindspot_new = car_state.getLeftBlindspot();
+  const bool right_blindspot_new = car_state.getRightBlindspot();
+  // ~1.7 Hz flash so the edge cue blinks even if carState holds the lamp latched
+  const bool blink_on_new = ((*s.sm).frame / 6) % 2 == 0;
+  const bool edge_changed = left_blinker_new != left_blinker || right_blinker_new != right_blinker ||
+                            left_blindspot_new != left_blindspot || right_blindspot_new != right_blindspot ||
+                            ((left_blinker_new || right_blinker_new) && blink_on_new != blink_on);
+
+  if (bg != bgColor || edge_changed) {
     bg = bgColor;
+    left_blinker = left_blinker_new;
+    right_blinker = right_blinker_new;
+    left_blindspot = left_blindspot_new;
+    right_blindspot = right_blindspot_new;
+    blink_on = blink_on_new;
     update();
   }
 }
@@ -103,6 +118,23 @@ void OnroadWindow::offroadTransition(bool offroad) {
 void OnroadWindow::paintEvent(QPaintEvent *event) {
   QPainter p(this);
   p.fillRect(rect(), QColor(bg.red(), bg.green(), bg.blue(), 255));
+
+  const QColor blinker_green(0x51, 0xC2, 0x55, 255);
+  const QColor bsm_amber(0xFF, 0x9F, 0x00, 255);
+  const QRect left_edge(0, 0, bdr_s, height());
+  const QRect right_edge(width() - bdr_s, 0, bdr_s, height());
+
+  if (left_blindspot) {
+    p.fillRect(left_edge, bsm_amber);
+  } else if (left_blinker && blink_on) {
+    p.fillRect(left_edge, blinker_green);
+  }
+
+  if (right_blindspot) {
+    p.fillRect(right_edge, bsm_amber);
+  } else if (right_blinker && blink_on) {
+    p.fillRect(right_edge, blinker_green);
+  }
 }
 
 // ***** onroad widgets *****

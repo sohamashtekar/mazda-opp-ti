@@ -78,7 +78,8 @@ static int mazda_rx_hook(CANPacket_t *to_push) {
 
     // enter controls on rising edge of ACC, exit controls on ACC off
     if (addr == MAZDA_CRZ_CTRL) {
-      bool cruise_engaged = GET_BYTE(to_push, 0) & 0x8U;
+      bool cruise_engaged = GET_BYTE(to_push, 0) & 0x8U;  // CRZ_ACTIVE, bit 3
+      acc_main_on = GET_BIT(to_push, 17U);  // CRZ_AVAILABLE
       if (cruise_engaged) {
         if (!cruise_engaged_prev) {
           controls_allowed = 1;
@@ -127,8 +128,9 @@ static int mazda_tx_hook(CANPacket_t *to_send) {
       int desired_torque = (((GET_BYTE(to_send, 0) & 0x0FU) << 8) | GET_BYTE(to_send, 1)) - MAZDA_MAX_STEER;
       bool violation = 0;
       uint32_t ts = microsecond_timer_get();
+      bool lat_allowed = lat_control_allowed();
 
-      if (controls_allowed) {
+      if (lat_allowed) {
 
         // *** global torque limit check ***
         violation |= max_limit_check(desired_torque, MAZDA_MAX_STEER, -MAZDA_MAX_STEER);
@@ -152,13 +154,13 @@ static int mazda_tx_hook(CANPacket_t *to_send) {
         }
       }
 
-      // no torque if controls is not allowed
-      if (!controls_allowed && (desired_torque != 0)) {
+      // no torque if lateral control is not allowed
+      if (!lat_allowed && (desired_torque != 0)) {
         violation = 1;
       }
 
-      // reset to 0 if either controls is not allowed or there's a violation
-      if (violation || !controls_allowed) {
+      // reset to 0 if either lateral control is not allowed or there's a violation
+      if (violation || !lat_allowed) {
         desired_torque_last = 0;
         rt_torque_last = 0;
         ts_last = ts;

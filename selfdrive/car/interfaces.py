@@ -5,6 +5,7 @@ from typing import Dict, Tuple, List
 
 from cereal import car
 from common.kalman.simple_kalman import KF1D
+from common.params import Params
 from common.realtime import DT_CTRL
 from selfdrive.car import gen_empty_fingerprint
 from selfdrive.config import Conversions as CV
@@ -33,6 +34,7 @@ class CarInterfaceBase(ABC):
     self.low_speed_alert = False
     self.silent_steer_warning = True
     self.CP.enableTorqueInterceptor = False
+    self.always_on_lateral = Params().get_bool("AlwaysOnLateral")
 
     if CarState is not None:
       self.CS = CarState(CP)
@@ -156,9 +158,11 @@ class CarInterfaceBase(ABC):
       events.add(EventName.steerUnavailable)
 
     # Disable on rising edge of gas or brake. Also disable on brake when speed > 0.
-    if (cs_out.gasPressed and not self.CS.out.gasPressed) or \
-       (cs_out.brakePressed and (not self.CS.out.brakePressed or not cs_out.standstill)):
-      events.add(EventName.pedalPressed)
+    # Always On Lateral keeps steering through pedal presses, so skip this disengage.
+    if not self.always_on_lateral:
+      if (cs_out.gasPressed and not self.CS.out.gasPressed) or \
+         (cs_out.brakePressed and (not self.CS.out.brakePressed or not cs_out.standstill)):
+        events.add(EventName.pedalPressed)
 
     # we engage when pcm is active (rising edge)
     if pcm_enable:

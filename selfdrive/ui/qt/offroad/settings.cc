@@ -65,6 +65,24 @@ TogglesPanel::TogglesPanel(SettingsWindow *parent) : ListWidget(parent) {
       "In this mode openpilot will ignore lanelines and just drive how it thinks a human would.",
       "../assets/offroad/icon_road.png",
     },
+    {
+      "AlwaysOnLateral",
+      "Always On Lateral",
+      "openpilot steering stays active when the accelerator or brake is pressed. Turning it off uses the cruise ON/OFF button. Attention is required at all times.",
+      "../assets/offroad/icon_openpilot.png",
+    },
+    {
+      "AlwaysOnLateralMain",
+      "Enable With Cruise Control",
+      "Enable Always On Lateral whenever cruise is armed with the ON/OFF button, even if openpilot is not engaged with SET.",
+      "../assets/offroad/icon_speed_limit.png",
+    },
+    {
+      "PauseAOLOnBrake",
+      "Pause On Brake",
+      "Temporarily pause Always On Lateral while the brake pedal is pressed.",
+      "../assets/offroad/icon_warning.png",
+    },
 #ifdef ENABLE_MAPS
     {
       "NavSettingTime24h",
